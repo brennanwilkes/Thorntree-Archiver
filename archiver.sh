@@ -12,14 +12,24 @@ output_path=$( eval echo -n "~/Desktop/thorntree-archive" )
 	mkdir -p "$output_path"
 }
 
+function debug_print() {
+	[ "$#" -eq 4 ] && {
+		printf "[%-7s] | %-38s | %-11s | %s\n" "$1" "$2" "$3" "$4"
+	} || {
+		printf "[%-7s] | %-52s | %s\n" "$1" "$2" "$3"
+	}
 
+}
 
 function get_forum_posts_from_page() {
-
 	curl -Ls "${webpage}${root_forum}?page=${1}" | grep -o 'href="[^"]*"' | grep -v '[#?:]' | sed -n -e "s/^.*href=\"\/thorntree\/forums\/$root_forum\///p" | sed 's/"//g' | grep -v '^topics/new$'
 }
 
 for page in $(seq $current_page $max_page); do
+
+	#debug_print "[INDEX] Indexing page $page/$max_page from $root_forum"
+	debug_print "INDEX" "$root_forum" "$page/$max_page"
+
 	for forum in $( get_forum_posts_from_page $page ); do
 		sub_forum=$( echo $forum | cut -d'/' -f1 )
 		page_name=$( echo $forum | cut -d'/' -f2 )
@@ -28,6 +38,8 @@ for page in $(seq $current_page $max_page); do
 
 		curl -Is $req_page | head -n1 | grep -q '200'
 		[ $? -eq 0 ] || {
+			error_code=$( curl -Is $req_page | head -n1 | cut -d' ' -f2 )
+			debug_print "FAILED" "ERROR CODE: $error_code" "$req_page"
 			continue
 		}
 
@@ -41,6 +53,8 @@ for page in $(seq $current_page $max_page); do
 
 		echo "$page_HTML" > "${output_path}/${sub_forum}/${page_name}.html"
 		touch -d "$page_date" "${output_path}/${sub_forum}/${page_name}.html"
+
+		debug_print "SUCCESS" "$sub_forum" "$page_date" "$page_name"
 
 	done
 done
