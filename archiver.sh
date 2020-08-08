@@ -25,9 +25,30 @@ function get_forum_posts_from_page() {
 	curl -Ls "${webpage}${root_forum}?page=${1}" | grep -o 'href="[^"]*"' | grep -v '[#?:]' | sed -n -e "s/^.*href=\"\/thorntree\/forums\/$root_forum\///p" | sed 's/"//g' | grep -v '^topics/new$'
 }
 
-for page in $(seq $current_page $max_page); do
+function extract_middle() {
+	prefix=$1
+	group=$2
+	postfix=$3
+	while IFS= read -r line; do
+		echo $line | grep -E -o "$prefix$group$postfix" | sed -E "s/$prefix($group)$postfix/\1/"
+	done
+}
 
-	#debug_print "[INDEX] Indexing page $page/$max_page from $root_forum"
+function format_file() {
+	fn="$1"
+	title=$( head -n 1 "$fn" | extract_middle '<h1 class="topic__title copy--h1">' '[^<]+' '<\/h1>' | tr -dc "[ \-0-9a-zA-Z]" )
+	sed -i "s/<title>.*<\/title>/<title>$title<\/title>/" "$fn"
+	[ $? -eq 0 ] || {
+		debug_print "FAILURE" "Formatting failed for document" "$title - $fn"
+	}
+}
+
+for file in $( find . | grep '.html$' ); do
+	format_file $file
+done
+
+
+for page in $(seq $current_page $max_page); do
 	debug_print "INDEX" "$root_forum" "$page/$max_page"
 
 	for forum in $( get_forum_posts_from_page $page ); do
@@ -44,7 +65,7 @@ for page in $(seq $current_page $max_page); do
 		}
 
 		page_HTML=$( curl -Ls $req_page )
-		page_date=$( echo $page_HTML | grep -E -o '<small class="timeago">([0-9]+ [a-zA-Z]+ [0-9]+)</small>' | sed -E 's/<small class="timeago">([0-9]+ [a-zA-Z]+ [0-9]+)<\/small>/\1/g' | tail -n1 )
+		page_date=$( echo $page_HTML | extract_middle '<small class="timeago">' '[0-9]+ [a-zA-Z]+ [0-9]+' '<\/small>' | tail -n1 )
 
 		[ -d "${output_path}/${sub_forum}" ] || {
 			mkdir -p "${output_path}/${sub_forum}"
@@ -52,6 +73,7 @@ for page in $(seq $current_page $max_page); do
 
 
 		echo "$page_HTML" > "${output_path}/${sub_forum}/${page_name}.html"
+		format_file "${output_path}/${sub_forum}/${page_name}.html"
 		touch -d "$page_date" "${output_path}/${sub_forum}/${page_name}.html"
 
 		debug_print "SUCCESS" "$sub_forum" "$page_date" "$page_name"
